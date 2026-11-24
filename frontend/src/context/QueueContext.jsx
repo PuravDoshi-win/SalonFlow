@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+} from 'react';
 import { playChime } from '../utils/sound';
 
 const QueueContext = createContext(null);
@@ -10,11 +16,15 @@ export const QueueProvider = ({ children }) => {
   useEffect(() => {
     let ws;
     let timer;
+    let shouldReconnect = true;
 
     const connectWs = () => {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws/queue`;
-      
+      const backendUrl = import.meta.env.VITE_API_URL;
+
+      const wsUrl = backendUrl
+        ? `${backendUrl.replace(/\/+$/, '').replace(/^http/, 'ws')}/ws/queue`
+        : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/queue`;
+
       ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
@@ -25,18 +35,21 @@ export const QueueProvider = ({ children }) => {
         try {
           const data = JSON.parse(event.data);
           setLastEvent(data);
+
           if (data.event === 'CUSTOMER_CALLED') {
             playChime();
           }
         } catch (e) {
-          // Non-JSON ping message
+          // Ignore non-JSON messages
         }
       };
 
       ws.onclose = () => {
         setConnected(false);
-        // Auto-reconnect after 3 seconds
-        timer = setTimeout(connectWs, 3000);
+
+        if (shouldReconnect) {
+          timer = setTimeout(connectWs, 3000);
+        }
       };
 
       ws.onerror = () => {
@@ -47,8 +60,12 @@ export const QueueProvider = ({ children }) => {
     connectWs();
 
     return () => {
+      shouldReconnect = false;
       clearTimeout(timer);
-      if (ws) ws.close();
+
+      if (ws) {
+        ws.close();
+      }
     };
   }, []);
 
